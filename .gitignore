@@ -102,3 +102,13 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+data/raw/
+
+data/test_images/
+
+data/train_images/
+
+data/blend_models/
+
+logs/
