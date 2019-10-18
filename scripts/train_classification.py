@@ -1,11 +1,11 @@
-TRAIN_IMAGES = '/home/denilv/Projects/severstal/data/train_images/'
-TRAIN_CSV = '/mnt/NVME1TB/Projects/severstal/data/cls_df/train.csv'
-VALID_CSV = '/mnt/NVME1TB/Projects/severstal/data/cls_df/valid.csv'
-TEST_IMAGES = '/home/denilv/Projects/severstal/data/test_images/'
+TRAIN_IMAGES = 'data/train_images/'
+TRAIN_CSV = 'data/cls_df/train.csv'
+VALID_CSV = 'data/cls_df/valid.csv'
+TEST_IMAGES = 'data/test_images/'
 
-EPOCHS = 30
+EPOCHS = 50
 LR = 1e-4
-BATCH_SIZE = 10
+BATCH_SIZE = 12
 CROP_SIZE = None
 
 CUDA_VISIBLE_DEVICES = '1'
@@ -15,7 +15,7 @@ ENCODER_WEIGHTS = 'imagenet'
 DEVICE = None
 ACTIVATION = 'sigmoid'
 
-CONTINUE = '/mnt/NVME1TB/Projects/severstal/logs/cls_resnet50_new_wave/checkpoints/last.pth'
+CONTINUE = 'logs/cls_resnet50_new_wave/checkpoints/best_full.pth'
 
 LOGDIR = f'logs/cls_{ENCODER}_new_wave'
 
@@ -28,27 +28,19 @@ import pandas as pd
 import segmentation_models_pytorch as smp
 import albumentations as A
 
-from albumentations.augmentations.functional import normalize
 from tqdm.auto import tqdm
-from modules.comp_tools import ClsDataset, AUGMENTATIONS_TRAIN, get_model, get_tv_model
+from modules.comp_tools import ClsDataset, AUGMENTATIONS_TRAIN, get_model, get_tv_model, preprocessing_fn, to_tensor
 from modules.common import rle_decode
 from catalyst.dl.runner import SupervisedRunner
 from catalyst.dl.callbacks import F1ScoreCallback, AccuracyCallback
 from torch.utils.data import DataLoader as BaseDataLoader
 from torch.utils.data import Dataset as BaseDataset
 
-
-def to_tensor(x, **kwargs):
-    return x.transpose(2, 0, 1).astype('float32')
-
-
 train_df = pd.read_csv(TRAIN_CSV).fillna('')[:]
 valid_df = pd.read_csv(VALID_CSV).fillna('')[:]
 
 # TODO: model
 model = get_model(ENCODER, 2, ENCODER_WEIGHTS)
-preprocessing_fn = lambda x: to_tensor(normalize(x, model.mean, model.std))
-# preprocessing_fn = lambda x: to_tensor(normalize(x, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]))
 
 train_dataset = ClsDataset(
     train_df,
@@ -62,8 +54,8 @@ valid_dataset = ClsDataset(
     augmentations=None, 
     preprocess_img=preprocessing_fn,
 )
-train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=3)
-valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=3)
+train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
+valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
 
 if CONTINUE:
     print('Loading', CONTINUE)
@@ -84,6 +76,7 @@ optimizer = torch.optim.SGD([
     {'params': model.layer3.parameters(), 'lr': LR / 2},
     {'params': model.layer4.parameters(), 'lr': LR / 1},
 ], lr=LR)
+# scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=[LR / 10, LR / 5, LR / 2, LR / 1], total_steps=100)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_min=1e-7)
 # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, cooldown=2, min_lr=1e-7)
 
@@ -105,6 +98,8 @@ runner.train(
     num_epochs=num_epochs,
     verbose=1,
     scheduler=scheduler,
+    main_metric='accuracy01',
+    minimize_metric=False,
 )
 
 ## Step 2. FT with HFlip
@@ -133,4 +128,6 @@ runner.train(
     num_epochs=num_epochs,
     verbose=1,
     scheduler=scheduler,
+    main_metric='accuracy01',
+    minimize_metric=False,
 )

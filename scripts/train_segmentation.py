@@ -1,7 +1,7 @@
-TRAIN_IMAGES = '/home/denilv/Projects/severstal/data/train_images/'
-TRAIN_CSV = '/mnt/NVME1TB/Projects/severstal/data/my_csv/train.csv'
-VALID_CSV = '/mnt/NVME1TB/Projects/severstal/data/my_csv/valid.csv'
-TEST_IMAGES = '/home/denilv/Projects/severstal/data/test_images/'
+TRAIN_IMAGES = 'data/train_images/'
+TRAIN_CSV = 'data/my_csv/train.csv'
+VALID_CSV = 'data/my_csv/valid.csv'
+TEST_IMAGES = 'data/test_images/'
 
 EPOCHS = 20
 LR = 1e-3
@@ -15,7 +15,7 @@ ENCODER_WEIGHTS = 'imagenet'
 DEVICE = None
 ACTIVATION = 'sigmoid'
 
-CONTINUE = '/mnt/NVME1TB/Projects/severstal/logs/unet_se_resnext50_32x4d/checkpoints/best_full.pth'
+CONTINUE = 'logs/unet_se_resnext50_32x4d/checkpoints/best_full.pth'
 
 LOGDIR = f'logs/unet_{ENCODER}'
 
@@ -28,35 +28,12 @@ import pandas as pd
 import segmentation_models_pytorch as smp
 
 from tqdm.auto import tqdm
-from modules.comp_tools import Dataset, AUGMENTATIONS_TRAIN
+from modules.comp_tools import Dataset, AUGMENTATIONS_TRAIN, decode_masks, preprocessing_fn, to_tensor, get_segm_model
 from modules.common import rle_decode
 from catalyst.dl.runner import SupervisedRunner
 from catalyst.dl.callbacks import DiceCallback, IouCallback
 from torch.utils.data import DataLoader as BaseDataLoader
 from torch.utils.data import Dataset as BaseDataset
-
-
-def decode_masks(df):
-    decoded_masks = []
-    for enc_mask in tqdm(df.EncodedPixels):
-        dec_mask = rle_decode(enc_mask, (1600, 256)).astype(np.bool8).T
-        decoded_masks.append(dec_mask)
-    df['Mask'] = decoded_masks
-    return df
-
-
-encoder_preprocessing = smp.encoders.get_preprocessing_fn(ENCODER, ENCODER_WEIGHTS)
-def to_tensor(x, **kwargs):
-    return x.transpose(2, 0, 1).astype('float32')
-
-
-def preprocessing_fn(x):
-    x = encoder_preprocessing(x)
-    return to_tensor(x)
-
-
-def to_float32(x):
-    return x.transpose(2, 0, 1).astype('float32')
 
 
 train_df = pd.read_csv(TRAIN_CSV).fillna('')
@@ -66,34 +43,30 @@ valid_df = pd.read_csv(VALID_CSV).fillna('')
 train_df = decode_masks(train_df)
 valid_df = decode_masks(valid_df)
 
-model = smp.Unet(
+arch_args = dict(
     encoder_name=ENCODER,
     encoder_weights=ENCODER_WEIGHTS,
     classes=4,
     activation=ACTIVATION,
 )
+model = get_segm_model('Unet', arch_args, load_weights=CONTINUE)
 
 train_dataset = Dataset(
     train_df,
     img_prefix=TRAIN_IMAGES, 
     augmentations=AUGMENTATIONS_TRAIN, 
     preprocess_img=preprocessing_fn,
-    preprocess_mask=to_float32,
+    preprocess_mask=to_tensor,
 )
 valid_dataset = Dataset(
     valid_df,
     img_prefix=TRAIN_IMAGES, 
     augmentations=None, 
     preprocess_img=preprocessing_fn,
-    preprocess_mask=to_float32,
+    preprocess_mask=to_tensor,
 )
 train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
 valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
-
-if CONTINUE:
-    print('Loading', CONTINUE)
-    state_dict = torch.load(CONTINUE)
-    print(model.load_state_dict(state_dict['model_state_dict']))
 
 # experiment setup
 num_epochs = EPOCHS

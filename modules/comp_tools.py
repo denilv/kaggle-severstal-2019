@@ -7,13 +7,27 @@ import torchvision as tv
 import torch
 import cv2
 import os
+import segmentation_models_pytorch as smp
 
 from PIL import Image
 from torch import nn
 from torch.utils.data import DataLoader as BaseDataLoader
 from torch.utils.data import Dataset as BaseDataset
-
 from tqdm.auto import tqdm
+from albumentations.augmentations.functional import normalize
+
+from .common import rle_decode
+
+
+MEAN = [0.485, 0.456, 0.406]
+STD = [0.229, 0.224, 0.225]
+
+def preprocessing_fn(x):
+    return to_tensor(normalize(x, MEAN, STD, max_pixel_value=1.0))
+
+
+def to_tensor(x, **kwargs):
+    return x.transpose(2, 0, 1).astype('float32')
 
 AUGMENTATIONS_TRAIN = A.Compose([
     #     A.RandomCrop(W, H),
@@ -153,15 +167,23 @@ class TestDataset(BaseDataset):
         return self.preprocess_img(img)
 
 
-def predict_cls(model, dl, is_cuda=True):
+def decode_masks(df):
+    decoded_masks = []
+    for enc_mask in tqdm(df.EncodedPixels):
+        dec_mask = rle_decode(enc_mask, (1600, 256)).astype(np.bool8).T
+        decoded_masks.append(dec_mask)
+    df['Mask'] = decoded_masks
+    return df
+
+
+def predict_cls(model, dl, device='cuda:0'):
     logit_batches = []
     gt_batches = []
     for batch in tqdm(dl):
         with torch.no_grad():
             features = batch['features']
             gt = batch.get('targets_one_hot', None)
-            if is_cuda:
-                features = features.cuda()
+            features = features.to(device)
             logits = model(features).detach().cpu()
             logit_batches.append(logits)
             if gt is not None:
@@ -169,6 +191,35 @@ def predict_cls(model, dl, is_cuda=True):
     all_logits = torch.cat(logit_batches)
     all_gt = torch.cat(gt_batches)
     return all_logits, all_gt
+
+
+def predict_semg(model, dl, device='cuda:0'):
+    logit_batches = []
+    masks_batches = []
+    for batch in tqdm(dl):
+        with torch.no_grad():
+            if isinstance(batch, (tuple, list)):
+                features, masks = batch
+            else:
+                features, masks = batch, None
+            features = features.to(device)
+            logits = model(features).detach().cpu()
+            logit_batches.append(logits)
+            if masks is not None:
+                masks_batches.append(masks)
+    all_logits = torch.cat(logit_batches)
+    all_masks = torch.cat(masks_batches)
+    return all_logits, all_masks
+
+
+def get_segm_model(arch, arch_args, load_weights=None):
+    model_builder = smp.__dict__[arch]
+    model = model_builder(**arch_args)
+    if load_weights:
+        print('Loading', load_weights)
+        state_dict = torch.load(load_weights)
+        print(model.load_state_dict(state_dict['model_state_dict']))
+    return model
 
 
 def get_model(model_name, num_classes=2, pretrained='imagenet', load_weights=None):
@@ -208,6 +259,20 @@ def get_tv_model(model_name, num_classes=2, pretrained='imagenet'):
         nn.Linear(in_features=init_features // 2, out_features=num_classes),
     )
     return model
+
+
+class ModelAgg:
+    def __init__(self, models):
+        self.models = models
+    
+    def __call__(self, x):
+        res = []
+        x = x.cuda()
+        with torch.no_grad():
+            for m in self.models:
+                res.append(m(x))
+        res = torch.stack(res)
+        return torch.mean(res, dim=0)
 
 
 class ClsDataset(Dataset):
