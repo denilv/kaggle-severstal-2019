@@ -1,23 +1,23 @@
 TRAIN_IMAGES = 'data/train_images/'
-TRAIN_CSV = 'data/my_csv/train.csv'
-VALID_CSV = 'data/my_csv/valid.csv'
+TRAIN_CSV = 'data/segm_df/train.csv'
+VALID_CSV = 'data/segm_df/valid.csv'
 TEST_IMAGES = 'data/test_images/'
 
-EPOCHS = 20
-LR = 1e-3
-BATCH_SIZE = 6
+EPOCHS = 7
+LR = 5e-4
+BATCH_SIZE = 4
 CROP_SIZE = None
 
-CUDA_VISIBLE_DEVICES = '1'
+CUDA_VISIBLE_DEVICES = '1, 0'
 
-ENCODER = 'se_resnext50_32x4d'
+ENCODER = 'se_resnext101_32x4d'
 ENCODER_WEIGHTS = 'imagenet'
 DEVICE = None
 ACTIVATION = 'sigmoid'
 
-CONTINUE = 'logs/unet_se_resnext50_32x4d/checkpoints/best_full.pth'
+CONTINUE = '/mnt/NVME1TB/Projects/kaggle-severstal-2019/logs/fpn_se_resnext101_32x4d_non_augm/checkpoints/best_full.pth'
 
-LOGDIR = f'logs/unet_{ENCODER}'
+LOGDIR = f'logs/fpn_{ENCODER}_non_augm'
 
 
 import os
@@ -26,12 +26,13 @@ import torch
 import numpy as np
 import pandas as pd
 import segmentation_models_pytorch as smp
+import albumentations as A
 
 from tqdm.auto import tqdm
 from modules.comp_tools import Dataset, AUGMENTATIONS_TRAIN, decode_masks, preprocessing_fn, to_tensor, get_segm_model
 from modules.common import rle_decode
 from catalyst.dl.runner import SupervisedRunner
-from catalyst.dl.callbacks import DiceCallback, IouCallback
+from catalyst.dl.callbacks import DiceCallback, IouCallback, OptimizerCallback
 from torch.utils.data import DataLoader as BaseDataLoader
 from torch.utils.data import Dataset as BaseDataset
 
@@ -49,12 +50,15 @@ arch_args = dict(
     classes=4,
     activation=ACTIVATION,
 )
-model = get_segm_model('Unet', arch_args, load_weights=CONTINUE)
+model = get_segm_model('FPN', arch_args, load_weights=CONTINUE)
 
 train_dataset = Dataset(
     train_df,
     img_prefix=TRAIN_IMAGES, 
-    augmentations=AUGMENTATIONS_TRAIN, 
+    augmentations=A.Compose([
+        A.HorizontalFlip(p=0.5),
+        A.ToFloat(max_value=1),
+    ], p=1), 
     preprocess_img=preprocessing_fn,
     preprocess_mask=to_tensor,
 )
@@ -65,8 +69,8 @@ valid_dataset = Dataset(
     preprocess_img=preprocessing_fn,
     preprocess_mask=to_tensor,
 )
-train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
-valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
+train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE * 2, shuffle=True, num_workers=4)
+valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE * 2, shuffle=False, num_workers=4)
 
 # experiment setup
 num_epochs = EPOCHS
@@ -75,12 +79,13 @@ loaders = {
     "train": train_dl,
     "valid": valid_dl
 }
-criterion = smp.utils.losses.BCEJaccardLoss(eps=1e-7)
+criterion = smp.utils.losses.DiceLoss(eps=1e-7)
 optimizer = torch.optim.Adam([
-    {'params': model.decoder.parameters(), 'lr': LR / 10}, 
-    {'params': model.encoder.parameters(), 'lr': LR},  
+    {'params': model.encoder.parameters(), 'lr': LR / 10},  
+    {'params': model.decoder.parameters(), 'lr': LR}, 
 ])
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_min=1e-7)
+
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2, 4, 6])
 
 callbacks = [
     DiceCallback(
@@ -88,39 +93,11 @@ callbacks = [
     ),
     IouCallback(
         threshold=0.5,
-    )
+    ),
 ]
 runner = SupervisedRunner()
 
 ## Step 1.
-
-runner.train(
-    model=model,
-    criterion=criterion,
-    optimizer=optimizer,
-    callbacks=callbacks,
-    loaders=loaders,
-    logdir=logdir,
-    num_epochs=num_epochs,
-    verbose=1,
-    scheduler=scheduler,
-)
-
-## Step 2. 
-
-criterion = smp.utils.losses.DiceLoss(eps=1e-7)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    optimizer,
-    factor=0.5,
-    patience=3,
-    cooldown=0,
-    verbose=1,
-    min_lr=1e-7,
-)
-optimizer = torch.optim.Adam([
-    {'params': model.decoder.parameters(), 'lr': 1e-4}, 
-    {'params': model.encoder.parameters(), 'lr': 1e-5},  
-])
 
 runner.train(
     model=model,
