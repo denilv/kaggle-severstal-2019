@@ -88,6 +88,7 @@ class Dataset(BaseDataset):
         self,
         df,
         img_prefix,
+        background=False,
         augmentations=None,
         img_size=None,
         n_channels=3,
@@ -97,6 +98,7 @@ class Dataset(BaseDataset):
     ):
         self.df = df
         self.img_prefix = img_prefix
+        self.background = background
         self.img_ids = df.ImageId.unique()
         self.img_size = img_size
         self.n_channels = n_channels
@@ -120,9 +122,21 @@ class Dataset(BaseDataset):
     def get_masks(self, img_id):
         img_df = self.df[self.df.ImageId == img_id]
         img_df = img_df.sort_values('ClassId')
-        masks = np.stack(img_df.Mask.values, axis=-1).astype(np.int8)
+        if 'Mask' in img_df:
+            masks = np.stack(img_df.Mask.values, axis=-1).astype(np.uint8)
+        else:
+            masks = np.stack(
+                [rle_decode(rle_code, (1600, 256)).T for rle_code in img_df.EncodedPixels],
+                axis=-1
+            ).astype(np.uint8)
+        if self.background:
+            background = np.sum(masks, axis=-1) == 0
+            masks_with_back = np.zeros((*background.shape, 5), dtype=np.uint8)
+            masks_with_back[..., 4] = background
+            masks_with_back[..., :4] = masks
+            masks = masks_with_back
         if self.img_size:
-            masks = cv2.resize(masks, self.img_size)
+            masks = cv2.resize(masks, self.img_size, cv2.INTER_NEAREST)
         return masks
 
     def augm_img(self, img, mask=None):

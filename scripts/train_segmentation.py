@@ -3,21 +3,23 @@ TRAIN_CSV = 'data/segm_df/train.csv'
 VALID_CSV = 'data/segm_df/valid.csv'
 TEST_IMAGES = 'data/test_images/'
 
-EPOCHS = 7
-LR = 5e-4
+EPOCHS = 15
+LR = 1e-3
 BATCH_SIZE = 4
 CROP_SIZE = None
 
 CUDA_VISIBLE_DEVICES = '1, 0'
 
-ENCODER = 'se_resnext101_32x4d'
+ENCODER = 'efficientnet-b5'
 ENCODER_WEIGHTS = 'imagenet'
 DEVICE = None
-ACTIVATION = 'sigmoid'
+ACTIVATION = 'softmax'
+ONLY_DEFECTS = True
+BACKGROUND = True
 
-CONTINUE = '/mnt/NVME1TB/Projects/kaggle-severstal-2019/logs/fpn_se_resnext101_32x4d_non_augm/checkpoints/best_full.pth'
+CONTINUE = None
 
-LOGDIR = f'logs/fpn_{ENCODER}_non_augm'
+LOGDIR = f'logs/fpn_{ENCODER}'
 
 
 import os
@@ -47,7 +49,7 @@ valid_df = decode_masks(valid_df)
 arch_args = dict(
     encoder_name=ENCODER,
     encoder_weights=ENCODER_WEIGHTS,
-    classes=4,
+    classes=5,
     activation=ACTIVATION,
 )
 model = get_segm_model('FPN', arch_args, load_weights=CONTINUE)
@@ -55,10 +57,8 @@ model = get_segm_model('FPN', arch_args, load_weights=CONTINUE)
 train_dataset = Dataset(
     train_df,
     img_prefix=TRAIN_IMAGES, 
-    augmentations=A.Compose([
-        A.HorizontalFlip(p=0.5),
-        A.ToFloat(max_value=1),
-    ], p=1), 
+    augmentations=AUGMENTATIONS_TRAIN, 
+    background=BACKGROUND,
     preprocess_img=preprocessing_fn,
     preprocess_mask=to_tensor,
 )
@@ -66,11 +66,12 @@ valid_dataset = Dataset(
     valid_df,
     img_prefix=TRAIN_IMAGES, 
     augmentations=None, 
+    background=BACKGROUND, 
     preprocess_img=preprocessing_fn,
     preprocess_mask=to_tensor,
 )
-train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE * 2, shuffle=True, num_workers=4)
-valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE * 2, shuffle=False, num_workers=4)
+train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE * 2, shuffle=True, num_workers=0)
+valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE * 2, shuffle=False, num_workers=0)
 
 # experiment setup
 num_epochs = EPOCHS
@@ -79,20 +80,21 @@ loaders = {
     "train": train_dl,
     "valid": valid_dl
 }
-criterion = smp.utils.losses.DiceLoss(eps=1e-7)
+criterion = smp.utils.losses.BCEDiceLoss(eps=1e-7)
 optimizer = torch.optim.Adam([
     {'params': model.encoder.parameters(), 'lr': LR / 10},  
-    {'params': model.decoder.parameters(), 'lr': LR}, 
+    {'params': model.decoder.parameters(), 'lr': LR},
 ])
-
-scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2, 4, 6])
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[7, 10, 12])
 
 callbacks = [
     DiceCallback(
-        threshold=0.5
+        threshold=0.5,
+        activation=ACTIVATION,
     ),
     IouCallback(
         threshold=0.5,
+        activation=ACTIVATION,
     ),
 ]
 runner = SupervisedRunner()
