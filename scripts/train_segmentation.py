@@ -1,6 +1,6 @@
 TRAIN_IMAGES = 'data/train_images/'
-TRAIN_CSV = 'data/segm_df/train.csv'
-VALID_CSV = 'data/segm_df/valid.csv'
+TRAIN_CSV = 'data/segm_df/train_with_empty.csv'
+VALID_CSV = 'data/segm_df/valid_with_empty.csv'
 TEST_IMAGES = 'data/test_images/'
 
 EPOCHS = 15
@@ -43,8 +43,8 @@ train_df = pd.read_csv(TRAIN_CSV).fillna('')
 valid_df = pd.read_csv(VALID_CSV).fillna('')
 
 # TODO: decode masks
-train_df = decode_masks(train_df)
-valid_df = decode_masks(valid_df)
+# train_df = decode_masks(train_df)
+# valid_df = decode_masks(valid_df)
 
 arch_args = dict(
     encoder_name=ENCODER,
