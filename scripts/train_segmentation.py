@@ -70,8 +70,8 @@ valid_dataset = Dataset(
     preprocess_img=preprocessing_fn,
     preprocess_mask=to_tensor,
 )
-train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE * 2, shuffle=True, num_workers=0)
-valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE * 2, shuffle=False, num_workers=0)
+train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE * 2, shuffle=True, num_workers=4)
+valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE * 2, shuffle=False, num_workers=4)
 
 # experiment setup
 num_epochs = EPOCHS
@@ -90,11 +90,11 @@ scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[7, 10, 1
 callbacks = [
     DiceCallback(
         threshold=0.5,
-        activation=ACTIVATION,
+        activation=ACTIVATION.capitalize(),
     ),
     IouCallback(
         threshold=0.5,
-        activation=ACTIVATION,
+        activation=ACTIVATION.capitalize(),
     ),
 ]
 runner = SupervisedRunner()
