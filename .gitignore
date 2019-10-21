@@ -112,3 +112,5 @@ data/train_images/
 data/blend_models/
 
 logs/
+
+.vscode/
