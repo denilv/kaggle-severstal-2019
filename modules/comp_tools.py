@@ -432,6 +432,6 @@ def dice_wo_back(
     # targets = targets[:, :-1, ...]
     intersection = torch.sum(targets * outputs, axis=[0, 2, 3])
     union = torch.sum(targets, axis=[0, 2, 3]) + torch.sum(outputs, axis=[0, 2, 3])
-    dice = 2 * intersection / (union + eps)
+    dice = (2 * intersection + eps) / (union + eps)
 
     return dice[:-1].mean()
