@@ -15,6 +15,10 @@ from torch.utils.data import DataLoader as BaseDataLoader
 from torch.utils.data import Dataset as BaseDataset
 from tqdm.auto import tqdm
 from albumentations.augmentations.functional import normalize
+from catalyst.utils import get_activation_fn
+from catalyst.dl.callbacks import DiceCallback
+from catalyst.dl.core import MetricCallback
+from math import ceil
 
 from .common import rle_decode
 
@@ -365,3 +369,37 @@ class TestClsDataset(Dataset):
             'img_id': img_id,
         }
 
+def dice_wo_back(
+    outputs: torch.Tensor,
+    targets: torch.Tensor,
+    eps: float = 1e-7,
+    threshold: float = None,
+    activation: str = "Sigmoid"
+):
+    """
+    Computes the dice metric
+
+    Args:
+        outputs (list):  A list of predicted elements
+        targets (list): A list of elements that are to be predicted
+        eps (float): epsilon
+        threshold (float): threshold for outputs binarization
+        activation (str): An torch.nn activation applied to the outputs.
+            Must be one of ["none", "Sigmoid", "Softmax2d"]
+
+    Returns:
+        double:  Dice score
+    """
+    activation_fn = get_activation_fn(activation)
+    outputs = activation_fn(outputs)
+
+    if threshold is not None:
+        outputs = (outputs > threshold).float()
+
+    # outputs = outputs[:, :-1, ...]
+    # targets = targets[:, :-1, ...]
+    intersection = torch.sum(targets * outputs, axis=[0, 2, 3])
+    union = torch.sum(targets, axis=[0, 2, 3]) + torch.sum(outputs, axis=[0, 2, 3])
+    dice = 2 * intersection / (union + eps)
+
+    return dice[:-1].sum()
