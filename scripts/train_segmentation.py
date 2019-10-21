@@ -1,12 +1,12 @@
 TRAIN_IMAGES = 'data/train_images/'
 TRAIN_CSV = 'data/segm_df/train_with_empty.csv'
-VALID_CSV = 'data/segm_df/valid_with_empty.csv'
+VALID_CSV = 'data/segm_df/valid.csv'
 TEST_IMAGES = 'data/test_images/'
 
 EPOCHS = 15
 LR = 1e-3
 BATCH_SIZE = 4
-CROP_SIZE = None
+CROP_SIZE = 416
 
 CUDA_VISIBLE_DEVICES = '1, 0'
 
@@ -19,7 +19,7 @@ BACKGROUND = True
 
 CONTINUE = None
 
-LOGDIR = f'logs/fpn_{ENCODER}'
+LOGDIR = f'logs/fpn_{ENCODER}_crop'
 
 
 import os
@@ -31,7 +31,7 @@ import segmentation_models_pytorch as smp
 import albumentations as A
 
 from tqdm.auto import tqdm
-from modules.comp_tools import Dataset, AUGMENTATIONS_TRAIN, decode_masks, preprocessing_fn, to_tensor, get_segm_model
+from modules.comp_tools import Dataset, CroppedDataset, AUGMENTATIONS_TRAIN, AUGMENTATIONS_TRAIN_CROP, decode_masks, preprocessing_fn, dice_wo_back, to_tensor, get_segm_model
 from modules.common import rle_decode
 from catalyst.dl.runner import SupervisedRunner
 from catalyst.dl.callbacks import DiceCallback, IouCallback, OptimizerCallback
@@ -44,7 +44,7 @@ valid_df = pd.read_csv(VALID_CSV).fillna('')
 
 # TODO: decode masks
 # train_df = decode_masks(train_df)
-# valid_df = decode_masks(valid_df)
+valid_df = decode_masks(valid_df)
 
 arch_args = dict(
     encoder_name=ENCODER,
@@ -57,7 +57,7 @@ model = get_segm_model('FPN', arch_args, load_weights=CONTINUE)
 train_dataset = Dataset(
     train_df,
     img_prefix=TRAIN_IMAGES, 
-    augmentations=AUGMENTATIONS_TRAIN, 
+    augmentations=AUGMENTATIONS_TRAIN if not CROP_SIZE else AUGMENTATIONS_TRAIN_CROP, 
     background=BACKGROUND,
     preprocess_img=preprocessing_fn,
     preprocess_mask=to_tensor,
@@ -65,13 +65,16 @@ train_dataset = Dataset(
 valid_dataset = Dataset(
     valid_df,
     img_prefix=TRAIN_IMAGES, 
-    augmentations=None, 
+    augmentations=A.PadIfNeeded(256, 1664), 
     background=BACKGROUND, 
     preprocess_img=preprocessing_fn,
     preprocess_mask=to_tensor,
 )
-train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE * 2, shuffle=True, num_workers=4)
-valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE * 2, shuffle=False, num_workers=4)
+if CROP_SIZE:
+    valid_dataset = CroppedDataset(CROP_SIZE, valid_dataset)
+print(len(valid_dataset), len(train_dataset))
+train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE * 2, shuffle=True, num_workers=0)
+valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE * 2, shuffle=False, num_workers=0)
 
 # experiment setup
 num_epochs = EPOCHS
@@ -97,6 +100,7 @@ callbacks = [
         activation=ACTIVATION.capitalize(),
     ),
 ]
+callbacks[0].metric_fn = dice_wo_back
 runner = SupervisedRunner()
 
 ## Step 1.

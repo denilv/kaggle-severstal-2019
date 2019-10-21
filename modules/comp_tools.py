@@ -62,6 +62,19 @@ AUGMENTATIONS_TRAIN = A.Compose([
     A.ToFloat(max_value=1)
 ], p=1)
 
+AUGMENTATIONS_TRAIN_CROP = A.Compose([
+    # TODO: OneOf CropNonEmpty or RandomCrop
+    A.CropNonEmptyMaskIfExists(256, 416, ignore_channels=[4], p=1.0),
+    A.HorizontalFlip(p=0.5),
+    A.VerticalFlip(p=0.5),
+    A.OneOf([
+        A.RandomContrast(),
+        A.RandomGamma(),
+        A.RandomBrightness(),
+    ], p=0.3),
+    A.ToFloat(max_value=1),
+], p=1)
+
 AUGMENTATIONS_TEST = A.Compose([
     A.ToFloat(max_value=1)
 ], p=1)
@@ -159,6 +172,25 @@ class Dataset(BaseDataset):
         masks = np.clip(masks, 0, 1)
         masks[masks > 0] = 1
         return self.preprocess_img(img), self.preprocess_mask(masks)
+
+class CroppedDataset(Dataset):
+
+    def __init__(self, crop, dataset):
+        self.crop = crop
+        self.crops_per_img = ceil(1600 / self.crop)
+        self.dataset = dataset
+
+    def __len__(self):
+        return len(self.dataset) * self.crops_per_img
+
+    def __getitem__(self, i):
+        img_int_id = i // self.crops_per_img
+        crop_id = i % self.crops_per_img
+        start_col, end_col = crop_id * self.crop, crop_id * self.crop + self.crop
+        img, masks = self.dataset[img_int_id]
+        img_crop = img[..., start_col: end_col]
+        mask_crop = masks[..., start_col: end_col]
+        return img_crop, mask_crop
 
 
 class TestDataset(BaseDataset):
