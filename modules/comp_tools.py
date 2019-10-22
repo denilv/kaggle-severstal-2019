@@ -46,24 +46,22 @@ def to_tensor(x, **kwargs):
     return x.transpose(2, 0, 1).astype('float32')
 
 AUGMENTATIONS_TRAIN = A.Compose([
-    #     A.RandomCrop(W, H),
     A.HorizontalFlip(p=0.5),
+    A.VerticalFlip(p=0.5),
     A.OneOf([
         A.RandomContrast(),
         A.RandomGamma(),
         A.RandomBrightness(),
     ], p=0.3),
-    A.OneOf([
-        A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
-        A.GridDistortion(),
-        A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
-    ], p=0.3),
-    #     RandomSizedCrop(min_max_height=(176, 256), height=H, width=W,p=0.25),
+    # A.OneOf([
+    #     A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+    #     A.GridDistortion(),
+    #     A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+    # ], p=0.3),
     A.ToFloat(max_value=1)
 ], p=1)
 
 AUGMENTATIONS_TRAIN_CROP = A.Compose([
-    # TODO: OneOf CropNonEmpty or RandomCrop
     A.OneOf([
         A.CropNonEmptyMaskIfExists(256, 416, ignore_channels=[4], p=0.7),
         A.RandomCrop(256, 416, p=0.3),

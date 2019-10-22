@@ -3,23 +3,22 @@ TRAIN_CSV = 'data/segm_df/train_with_empty.csv'
 VALID_CSV = 'data/segm_df/valid.csv'
 TEST_IMAGES = 'data/test_images/'
 
-EPOCHS = 20
-LR = 5e-4
+EPOCHS = 40
+LR = 1e-3
 BATCH_SIZE = 10
-CROP_SIZE = 416
+CROP_SIZE = None
 
 CUDA_VISIBLE_DEVICES = '1, 0'
 
-ENCODER = 'efficientnet-b5'
+ENCODER = 'resnet18'
 ENCODER_WEIGHTS = 'imagenet'
 DEVICE = None
 ACTIVATION = 'softmax'
-ONLY_DEFECTS = True
 BACKGROUND = True
 
-CONTINUE = 'logs/fpn_efficientnet-b5_crop/checkpoints/best_full.pth'
+CONTINUE = None #'logs/unet_se_resnext50_32x4d/checkpoints/best_full.pth'
 
-LOGDIR = f'logs/fpn_{ENCODER}_crop'
+LOGDIR = f'logs/unet_{ENCODER}_{ACTIVATION}' + '_crop' if CROP_SIZE else ''
 
 
 import os
@@ -52,7 +51,7 @@ arch_args = dict(
     classes=5,
     activation=ACTIVATION,
 )
-model = get_segm_model('FPN', arch_args, load_weights=CONTINUE)
+model = get_segm_model('Unet', arch_args, load_weights=CONTINUE)
 
 train_dataset = Dataset(
     train_df,
@@ -65,7 +64,7 @@ train_dataset = Dataset(
 valid_dataset = Dataset(
     valid_df,
     img_prefix=TRAIN_IMAGES, 
-    augmentations=A.PadIfNeeded(256, 1664), 
+    augmentations=A.PadIfNeeded(256, 1664) if CROP_SIZE else None, 
     background=BACKGROUND, 
     preprocess_img=preprocessing_fn,
     preprocess_mask=to_tensor,
@@ -82,12 +81,12 @@ loaders = {
     "train": train_dl,
     "valid": valid_dl
 }
-criterion = smp.utils.losses.DiceLoss(eps=1e-7)
+criterion = smp.utils.losses.BCEDiceLoss(eps=1e-7)
 optimizer = torch.optim.SGD([
     {'params': model.encoder.parameters(), 'lr': LR},  
     {'params': model.decoder.parameters(), 'lr': LR},
 ], lr=LR)
-scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[7, 10, 14])
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[20, 30, 35])
 
 callbacks = [
     DiceCallback(
