@@ -431,10 +431,16 @@ def dice_wo_back(
     if threshold is not None:
         outputs = (outputs > threshold).float()
 
-    # outputs = outputs[:, :-1, ...]
-    # targets = targets[:, :-1, ...]
-    intersection = torch.sum(targets * outputs, axis=[0, 2, 3])
-    union = torch.sum(targets, axis=[0, 2, 3]) + torch.sum(outputs, axis=[0, 2, 3])
-    dice = (2 * intersection + eps) / (union + eps)
+    # intersection = torch.sum(targets * outputs, axis=[0, 2, 3])
+    # union = torch.sum(targets, axis=[0, 2, 3]) + torch.sum(outputs, axis=[0, 2, 3])
+    # dice = (2 * intersection + eps) / (union + eps)
+    # return dice[:-1].mean()
 
-    return dice[:-1].mean()
+    # exclude background layer
+    outputs = outputs[:, :-1, ...]
+    targets = targets[:, :-1, ...]
+    
+    intersection = torch.sum(targets * outputs)
+    union = torch.sum(targets) + torch.sum(outputs)
+    dice = (2 * intersection) / (union + eps)
+    return dice
