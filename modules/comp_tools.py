@@ -64,14 +64,17 @@ AUGMENTATIONS_TRAIN = A.Compose([
 
 AUGMENTATIONS_TRAIN_CROP = A.Compose([
     # TODO: OneOf CropNonEmpty or RandomCrop
-    A.CropNonEmptyMaskIfExists(256, 416, ignore_channels=[4], p=1.0),
-    A.HorizontalFlip(p=0.5),
-    A.VerticalFlip(p=0.5),
     A.OneOf([
-        A.RandomContrast(),
-        A.RandomGamma(),
-        A.RandomBrightness(),
-    ], p=0.3),
+        A.CropNonEmptyMaskIfExists(256, 416, ignore_channels=[4], p=0.7),
+        A.RandomCrop(256, 416, p=0.3),
+    ], p=1.0),
+    A.HorizontalFlip(p=0.5),
+    # A.VerticalFlip(p=0.5),
+    # A.OneOf([
+    #     A.RandomContrast(),
+    #     A.RandomGamma(),
+    #     A.RandomBrightness(),
+    # ], p=0.3),
     A.ToFloat(max_value=1),
 ], p=1)
 

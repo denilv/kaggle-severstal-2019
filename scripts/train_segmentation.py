@@ -3,8 +3,8 @@ TRAIN_CSV = 'data/segm_df/train_with_empty.csv'
 VALID_CSV = 'data/segm_df/valid.csv'
 TEST_IMAGES = 'data/test_images/'
 
-EPOCHS = 200
-LR = 1e-3
+EPOCHS = 20
+LR = 5e-4
 BATCH_SIZE = 10
 CROP_SIZE = 416
 
@@ -82,12 +82,12 @@ loaders = {
     "train": train_dl,
     "valid": valid_dl
 }
-criterion = smp.utils.losses.BCEDiceLoss(eps=1e-7)
+criterion = smp.utils.losses.DiceLoss(eps=1e-7)
 optimizer = torch.optim.SGD([
-    {'params': model.encoder.parameters(), 'lr': LR / 10},  
+    {'params': model.encoder.parameters(), 'lr': LR},  
     {'params': model.decoder.parameters(), 'lr': LR},
 ], lr=LR)
-scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[50, 75, 90])
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[7, 10, 14])
 
 callbacks = [
     DiceCallback(
