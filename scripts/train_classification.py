@@ -90,7 +90,7 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_
 # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, cooldown=2, min_lr=1e-7)
 
 callbacks = [
-    AccuracyCallback(num_classes=2, threshold=0.5, activation='Softmax'),
+    AccuracyCallback(num_classes=5, threshold=0.5, activation='Softmax'),
     F1ScoreCallback(input_key="targets_one_hot", activation='Softmax', threshold=0.5),
 ]
 runner = SupervisedRunner()
