@@ -343,6 +343,8 @@ class ClsDataset(Dataset):
         self,
         df,
         img_prefix,
+        binary=False,
+        mode='multiclass',
         augmentations=None,
         img_size=None,
         n_channels=3,
@@ -351,6 +353,8 @@ class ClsDataset(Dataset):
     ):
         self.df = df
         self.img_prefix = img_prefix
+        self.binary = binary
+        self.mode = mode
         self.img_ids = df.ImageId.values
         self.labels = df.has_defect.values
         self.img_size = img_size
@@ -366,13 +370,26 @@ class ClsDataset(Dataset):
             img, _ = self.augm_img(img)
         img = img / 255.
         img = np.clip(img, 0, 1)
-        y = self.labels[i]
-        one_hot = np.zeros((2,), dtype='float32')
-        one_hot[y] = 1
+        row = self.df.iloc[i]
+        has_defect = row['has_defect']
+        defect_map = row['defect_map']
+        if self.binary:
+            targets = has_defect
+            targets_one_hot = np.zeros((2,))
+            targets_one_hot[has_defect] = 1
+        else:
+            if self.mode == 'multiclass':
+                targets_one_hot = np.array(defect_map + [int(not has_defect)])
+                targets = np.argmax(targets_one_hot)
+            elif self.mode == 'multilabel':
+                targets_one_hot = defect_map
+                targets = defect_map
+            else:
+                raise Exception(f'Unknown mode - {self.mode}')
         return {
             'features': self.preprocess_img(img), 
-            'targets': y,
-            'targets_one_hot': one_hot, 
+            'targets': targets,
+            'targets_one_hot': targets_one_hot, 
         }
 
 
