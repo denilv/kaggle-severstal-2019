@@ -10,14 +10,20 @@ CROP_SIZE = None
 
 CUDA_VISIBLE_DEVICES = '1'
 
-ENCODER = 'resnet50'
+ENCODER = 'resnet34'
 ENCODER_WEIGHTS = 'imagenet'
 DEVICE = None
 ACTIVATION = 'sigmoid'
+BINARY = False
+MODE = 'multiclass' # or 'multilabel'
 
-CONTINUE = 'logs/cls_resnet50_new_wave/checkpoints/best_full.pth'
+CONTINUE = None # 'logs/cls_resnet50_new_wave/checkpoints/best_full.pth'
 
-LOGDIR = f'logs/cls_{ENCODER}_new_wave'
+LOGDIR = f'logs/cls_{ENCODER}'
+if BINARY:
+    LOGDIR += '_binary'
+else:
+    LOGDIR += '_' + MODE
 
 
 import os
@@ -36,31 +42,34 @@ from catalyst.dl.callbacks import F1ScoreCallback, AccuracyCallback
 from torch.utils.data import DataLoader as BaseDataLoader
 from torch.utils.data import Dataset as BaseDataset
 
-train_df = pd.read_csv(TRAIN_CSV).fillna('')[:]
-valid_df = pd.read_csv(VALID_CSV).fillna('')[:]
+train_df = pd.read_csv(TRAIN_CSV).fillna('')
+valid_df = pd.read_csv(VALID_CSV).fillna('')
+
+f = lambda x: list(map(int, x.strip('[]').split()))
+train_df['defect_map'] = train_df.defect_map.apply(f)
+valid_df['defect_map'] = valid_df.defect_map.apply(f)
 
 # TODO: model
-model = get_model(ENCODER, 2, ENCODER_WEIGHTS)
+model = get_model(ENCODER, 5, ENCODER_WEIGHTS, load_weights=CONTINUE)
 
 train_dataset = ClsDataset(
     train_df,
     img_prefix=TRAIN_IMAGES, 
     augmentations=AUGMENTATIONS_TRAIN, 
     preprocess_img=preprocessing_fn,
+    mode=MODE,
+    binary=BINARY,
 )
 valid_dataset = ClsDataset(
     valid_df,
     img_prefix=TRAIN_IMAGES, 
     augmentations=None, 
     preprocess_img=preprocessing_fn,
+    mode=MODE,
+    binary=BINARY,
 )
 train_dl = BaseDataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
 valid_dl = BaseDataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
-
-if CONTINUE:
-    print('Loading', CONTINUE)
-    state_dict = torch.load(CONTINUE)
-    print(model.load_state_dict(state_dict['model_state_dict']))
 
 # experiment setup
 num_epochs = EPOCHS
